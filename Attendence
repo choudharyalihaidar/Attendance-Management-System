@@ -1,0 +1,471 @@
+import sqlite3
+from datetime import date
+import tkinter as tk
+from tkinter import messagebox, ttk
+import os
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+def init_db():
+    conn = sqlite3.connect("academy_attendance.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            roll_no TEXT UNIQUE NOT NULL,
+            class_name TEXT NOT NULL,
+            subjects TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            roll_no TEXT,
+            class_name TEXT,
+            subject TEXT,
+            date TEXT,
+            status TEXT,
+            FOREIGN KEY (roll_no) REFERENCES students (roll_no)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+class AttendanceApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("AIMS Science Academy - Attendance System")
+        self.root.geometry("860x620")
+        self.root.configure(bg="MintCream")
+        self.root.minsize(780, 540)
+
+        style = ttk.Style()
+        style.theme_use("clam")
+        
+        style.configure("Blue.TLabelframe", background="LightSteelBlue1")
+        style.configure("Blue.TLabelframe.Label", background="LightSteelBlue1", font=("Arial", 10, "bold"))
+        style.configure("Blue.TFrame", background="LightSteelBlue1")
+
+        style.configure("White.TFrame", background="white")
+
+        notebook = ttk.Notebook(root)
+        
+        self.tab_students = ttk.Frame(notebook, style="Blue.TFrame")
+        self.tab_attendance = ttk.Frame(notebook, style="Blue.TFrame")
+        self.tab_reports = ttk.Frame(notebook, style="Blue.TFrame")
+
+        notebook.add(self.tab_students, text="👥 Manage Students")
+        notebook.add(self.tab_attendance, text="📝 Mark Attendance")
+        notebook.add(self.tab_reports, text="📊 View Reports")
+        notebook.pack(expand=1, fill="both", padx=10, pady=10)
+
+        self.setup_students_tab()
+        self.setup_attendance_tab()
+        self.setup_reports_tab()
+
+    def setup_students_tab(self):
+        top_container = ttk.Frame(self.tab_students, style="Blue.TFrame")
+        top_container.pack(fill="x", padx=15, pady=10)
+
+        form_frame = ttk.LabelFrame(top_container, text=" Student Details ", style="Blue.TLabelframe")
+        form_frame.pack(side="left", fill="both", expand=True, padx=(0, 8), ipadx=5, ipady=5)
+
+        form_inner = ttk.Frame(form_frame, style="Blue.TFrame")
+        form_inner.pack(fill="both", expand=True, padx=5, pady=5)
+
+        ttk.Label(form_inner, text="Student Name:", background="LightSteelBlue1").grid(row=0, column=0, sticky="w", padx=5, pady=4)
+        self.name_entry = ttk.Entry(form_inner, width=22)
+        self.name_entry.grid(row=0, column=1, padx=5, pady=4)
+
+        ttk.Label(form_inner, text="Roll Number / ID:", background="LightSteelBlue1").grid(row=1, column=0, sticky="w", padx=5, pady=4)
+        self.roll_entry = ttk.Entry(form_inner, width=22)
+        self.roll_entry.grid(row=1, column=1, padx=5, pady=4)
+
+        ttk.Label(form_inner, text="Class Name:", background="LightSteelBlue1").grid(row=2, column=0, sticky="w", padx=5, pady=4)
+        self.class_entry = ttk.Entry(form_inner, width=22)
+        self.class_entry.grid(row=2, column=1, padx=5, pady=4)
+
+        ttk.Label(form_inner, text="Subjects (comma sep):", background="LightSteelBlue1").grid(row=3, column=0, sticky="w", padx=5, pady=4)
+        self.subjects_entry = ttk.Entry(form_inner, width=22)
+        self.subjects_entry.grid(row=3, column=1, padx=5, pady=4)
+
+        add_btn = ttk.Button(form_inner, text="Add Student", command=self.add_student)
+        add_btn.grid(row=4, column=0, columnspan=2, pady=8)
+
+        monogram_frame = ttk.LabelFrame(top_container, text=" AIMS Science Academy ", style="Blue.TLabelframe")
+        monogram_frame.pack(side="right", fill="both", expand=True, padx=(8, 0), ipadx=5, ipady=5)
+
+        logo_container = ttk.Frame(monogram_frame, style="Blue.TFrame")
+        logo_container.pack(expand=True, fill="both", pady=2)
+
+        logo_path = "academy_logo.jpeg"  
+        
+        if PIL_AVAILABLE and os.path.exists(logo_path):
+            try:
+                img = Image.open(logo_path)
+                img = img.resize((100, 75), Image.Resampling.LANCZOS)
+                self.logo_image = ImageTk.PhotoImage(img)
+                
+                img_label = ttk.Label(logo_container, image=self.logo_image, background="LightSteelBlue1")
+                img_label.pack(anchor="center", pady=(2, 0))
+                
+                title_lbl = ttk.Label(logo_container, text="AIMS", font=("Arial", 12, "bold"), foreground="#1e3a8a", background="LightSteelBlue1")
+                title_lbl.pack(anchor="center")
+                
+                sub_lbl = ttk.Label(logo_container, text="AIMS SCIENCE ACADEMY", font=("Arial", 6, "bold"), foreground="#7f1d1d", background="LightSteelBlue1")
+                sub_lbl.pack(anchor="center", pady=(0, 2))
+            except Exception as e:
+                self.show_fallback_monogram(logo_container)
+        else:
+            self.show_fallback_monogram(logo_container)
+
+        list_frame = ttk.LabelFrame(self.tab_students, text=" Enrolled Students ", style="Blue.TLabelframe")
+        list_frame.pack(fill="both", expand=True, padx=15, pady=5, ipadx=5, ipady=5)
+
+        list_inner = ttk.Frame(list_frame, style="Blue.TFrame")
+        list_inner.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.student_tree = ttk.Treeview(list_inner, columns=("ID", "Name", "Roll No", "Class", "Subjects"), show="headings", selectmode="browse")
+        self.student_tree.heading("ID", text="ID")
+        self.student_tree.heading("Name", text="Name")
+        self.student_tree.heading("Roll No", text="Roll No")
+        self.student_tree.heading("Class", text="Class")
+        self.student_tree.heading("Subjects", text="Subjects")
+        self.student_tree.pack(fill="both", expand=True, padx=5, pady=5)
+
+        btn_frame = ttk.Frame(list_inner, style="Blue.TFrame")
+        btn_frame.pack(pady=5)
+
+        refresh_btn = ttk.Button(btn_frame, text="Refresh List", command=self.load_students_list)
+        refresh_btn.pack(side="left", padx=5)
+
+        delete_selected_btn = ttk.Button(btn_frame, text="Delete Selected", command=self.delete_selected_student)
+        delete_selected_btn.pack(side="left", padx=5)
+
+        clear_all_btn = ttk.Button(btn_frame, text="Clear All Students", command=self.clear_all_students)
+        clear_all_btn.pack(side="left", padx=5)
+
+        self.load_students_list()
+
+    def show_fallback_monogram(self, parent):
+        lbl_title = ttk.Label(parent, text="AIMS", font=("Arial", 14, "bold"), foreground="#1e3a8a", background="LightSteelBlue1")
+        lbl_title.pack(anchor="center", pady=(10, 0))
+        lbl_sub = ttk.Label(parent, text="AIMS SCIENCE ACADEMY", font=("Arial", 7, "bold"), foreground="#7f1d1d", background="LightSteelBlue1")
+        lbl_sub.pack(anchor="center", pady=2)
+
+    def add_student(self):
+        name = self.name_entry.get().strip()
+        roll_no = self.roll_entry.get().strip()
+        class_name = self.class_entry.get().strip()
+        subjects = self.subjects_entry.get().strip()
+
+        if not name or not roll_no or not class_name or not subjects:
+            messagebox.showerror("Error", "Please fill in all fields (Name, Roll No, Class, Subjects).")
+            return
+
+        try:
+            conn = sqlite3.connect("academy_attendance.db")
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO students (name, roll_no, class_name, subjects) VALUES (?, ?, ?, ?)", 
+                           (name, roll_no, class_name, subjects))
+            conn.commit()
+            conn.close()
+            messagebox.showinfo("Success", f"Student {name} added successfully!")
+            self.name_entry.delete(0, tk.END)
+            self.roll_entry.delete(0, tk.END)
+            self.class_entry.delete(0, tk.END)
+            self.subjects_entry.delete(0, tk.END)
+            self.load_students_list()
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Error", "Roll number already exists.")
+
+    def delete_selected_student(self):
+        selected_item = self.student_tree.selection()
+        if not selected_item:
+            messagebox.showerror("Error", "Please select a student from the list to delete.")
+            return
+
+        item_values = self.student_tree.item(selected_item, "values")
+        student_id, name, roll_no, _, _ = item_values
+
+        confirm = messagebox.askyesno(
+            "Confirm Deletion",
+            f"Are you sure you want to delete student '{name}' (Roll No: {roll_no})?\nThis will also delete their attendance records!"
+        )
+        if confirm:
+            conn = sqlite3.connect("academy_attendance.db")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM attendance WHERE roll_no = ?", (roll_no,))
+            cursor.execute("DELETE FROM students WHERE roll_no = ?", (roll_no,))
+            conn.commit()
+            conn.close()
+            self.load_students_list()
+            messagebox.showinfo("Success", f"Student {name} deleted successfully.")
+
+    def clear_all_students(self):
+        confirm = messagebox.askyesno(
+            "Confirm Deletion", 
+            "Are you sure you want to delete ALL students?\nThis will also clear all related attendance records and reset IDs to start from 1!"
+        )
+        if confirm:
+            conn = sqlite3.connect("academy_attendance.db")
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM attendance")
+            cursor.execute("DELETE FROM students")
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name='students'")
+            conn.commit()
+            conn.close()
+            self.load_students_list()
+            messagebox.showinfo("Success", "All student records have been cleared and IDs have been reset.")
+
+    def load_students_list(self):
+        for row in self.student_tree.get_children():
+            self.student_tree.delete(row)
+
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, roll_no, class_name, subjects FROM students")
+        for row in cursor.fetchall():
+            self.student_tree.insert("", tk.END, values=row)
+        conn.close()
+
+    def setup_attendance_tab(self):
+        top_frame = ttk.Frame(self.tab_attendance, style="Blue.TFrame")
+        top_frame.pack(fill="x", padx=15, pady=10)
+
+        today = str(date.today())
+        ttk.Label(top_frame, text=f"Date: {today}", font=("Arial", 10, "bold"), background="LightSteelBlue1").pack(side="left")
+
+        ttk.Label(top_frame, text="Class:", background="LightSteelBlue1").pack(side="left", padx=(15, 5))
+        self.class_combo = ttk.Combobox(top_frame, state="readonly", width=12)
+        self.class_combo.pack(side="left", padx=5)
+        self.class_combo.bind("<<ComboboxSelected>>", lambda e: self.update_subject_dropdown())
+
+        ttk.Label(top_frame, text="Subject:", background="LightSteelBlue1").pack(side="left", padx=(15, 5))
+        self.subject_combo = ttk.Combobox(top_frame, state="readonly", width=15)
+        self.subject_combo.pack(side="left", padx=5)
+        self.subject_combo.bind("<<ComboboxSelected>>", lambda e: self.load_attendance_list())
+
+        load_btn = ttk.Button(top_frame, text="Refresh", command=self.update_class_dropdown)
+        load_btn.pack(side="right")
+
+        self.att_canvas_outer = ttk.LabelFrame(self.tab_attendance, text=" Mark Attendance (P = Present, A = Absent) ", style="Blue.TLabelframe")
+        self.att_canvas_outer.pack(fill="both", expand=True, padx=15, pady=5)
+
+        self.att_canvas_frame = ttk.Frame(self.att_canvas_outer, style="White.TFrame")
+        self.att_canvas_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.att_vars = {}
+        
+        save_btn = ttk.Button(self.tab_attendance, text="Save Attendance", command=self.save_attendance)
+        save_btn.pack(pady=10)
+
+        self.update_class_dropdown()
+
+    def update_class_dropdown(self):
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT class_name FROM students")
+        rows = cursor.fetchall()
+        conn.close()
+
+        classes = sorted([row[0] for row in rows if row[0]])
+        self.class_combo['values'] = classes
+        if classes:
+            self.class_combo.set(classes[0])
+            self.update_subject_dropdown()
+        else:
+            self.class_combo.set('')
+            self.subject_combo.set('')
+            self.subject_combo['values'] = []
+            for widget in self.att_canvas_frame.winfo_children():
+                widget.destroy()
+            ttk.Label(self.att_canvas_frame, text="No students/classes found. Please add students first.", background="white").pack(padx=10, pady=20)
+
+    def update_subject_dropdown(self):
+        selected_class = self.class_combo.get().strip()
+        if not selected_class:
+            return
+
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT subjects FROM students WHERE class_name = ?", (selected_class,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        all_subjects = set()
+        for row in rows:
+            subjects_list = [s.strip() for s in row[0].split(",")]
+            for sub in subjects_list:
+                if sub:
+                    all_subjects.add(sub)
+
+        subject_list = sorted(list(all_subjects))
+        self.subject_combo['values'] = subject_list
+        if subject_list:
+            self.subject_combo.set(subject_list[0])
+            self.load_attendance_list()
+        else:
+            self.subject_combo.set('')
+            for widget in self.att_canvas_frame.winfo_children():
+                widget.destroy()
+            ttk.Label(self.att_canvas_frame, text=f"No subjects found for class '{selected_class}'.", background="white").pack(padx=10, pady=20)
+
+    def load_attendance_list(self):
+        for widget in self.att_canvas_frame.winfo_children():
+            widget.destroy()
+
+        selected_class = self.class_combo.get().strip()
+        selected_subject = self.subject_combo.get().strip()
+        if not selected_class or not selected_subject:
+            return
+
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT roll_no, name, subjects FROM students WHERE class_name = ?", (selected_class,))
+        students = cursor.fetchall()
+        conn.close()
+
+        enrolled_students = []
+        for roll_no, name, subjects in students:
+            sub_list = [s.strip() for s in subjects.split(",")]
+            if selected_subject in sub_list:
+                enrolled_students.append((roll_no, name))
+
+        if not enrolled_students:
+            ttk.Label(self.att_canvas_frame, text=f"No students in class '{selected_class}' enrolled in '{selected_subject}'.", background="white").pack(padx=10, pady=20)
+            return
+
+        self.att_vars = {}
+        today = str(date.today())
+
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+
+        for roll_no, name in enrolled_students:
+            row_frame = ttk.Frame(self.att_canvas_frame, style="White.TFrame")
+            row_frame.pack(fill="x", padx=10, pady=4)
+
+            ttk.Label(row_frame, text=f"{name} ({roll_no})", width=30, anchor="w", background="white").pack(side="left")
+            
+            cursor.execute("SELECT status FROM attendance WHERE roll_no = ? AND class_name = ? AND subject = ? AND date = ?", 
+                           (roll_no, selected_class, selected_subject, today))
+            res = cursor.fetchone()
+            default_status = res[0] if res else "Present"
+
+            var = tk.StringVar(value=default_status)
+            self.att_vars[roll_no] = var
+
+            rb_present = ttk.Radiobutton(row_frame, text="Present", variable=var, value="Present")
+            rb_absent = ttk.Radiobutton(row_frame, text="Absent", variable=var, value="Absent")
+            
+            rb_present.pack(side="left", padx=10)
+            rb_absent.pack(side="left", padx=10)
+
+        conn.close()
+
+    def save_attendance(self):
+        selected_class = self.class_combo.get().strip()
+        selected_subject = self.subject_combo.get().strip()
+        
+        if not selected_class or not selected_subject:
+            messagebox.showerror("Error", "Please select both Class and Subject.")
+            return
+
+        if not self.att_vars:
+            messagebox.showerror("Error", "No attendance list loaded.")
+            return
+
+        today = str(date.today())
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+
+        for roll_no, var in self.att_vars.items():
+            status = var.get()
+            
+            cursor.execute("SELECT * FROM attendance WHERE roll_no = ? AND class_name = ? AND subject = ? AND date = ?", 
+                           (roll_no, selected_class, selected_subject, today))
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.execute("UPDATE attendance SET status = ? WHERE roll_no = ? AND class_name = ? AND subject = ? AND date = ?", 
+                               (status, roll_no, selected_class, selected_subject, today))
+            else:
+                cursor.execute("INSERT INTO attendance (roll_no, class_name, subject, date, status) VALUES (?, ?, ?, ?, ?)", 
+                               (roll_no, selected_class, selected_subject, today, status))
+
+        conn.commit()
+        conn.close()
+        messagebox.showinfo("Success", f"Attendance for Class {selected_class} ({selected_subject}) saved successfully!")
+
+    def setup_reports_tab(self):
+        filter_frame = ttk.Frame(self.tab_reports, style="Blue.TFrame")
+        filter_frame.pack(fill="x", padx=15, pady=10)
+
+        ttk.Label(filter_frame, text="Filter by Roll No:", background="LightSteelBlue1").pack(side="left", padx=5)
+        self.filter_entry = ttk.Entry(filter_frame, width=15)
+        self.filter_entry.pack(side="left", padx=5)
+
+        search_btn = ttk.Button(filter_frame, text="Generate Report", command=self.load_report)
+        search_btn.pack(side="left", padx=5)
+
+        report_outer = ttk.Frame(self.tab_reports, style="Blue.TFrame")
+        report_outer.pack(fill="both", expand=True, padx=15, pady=5)
+
+        report_frame = ttk.Frame(report_outer, style="White.TFrame")
+        report_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.report_tree = ttk.Treeview(report_frame, columns=("Name", "Roll No", "Class", "Subject", "Date", "Status"), show="headings")
+        self.report_tree.heading("Name", text="Student Name")
+        self.report_tree.heading("Roll No", text="Roll Number")
+        self.report_tree.heading("Class", text="Class")
+        self.report_tree.heading("Subject", text="Subject")
+        self.report_tree.heading("Date", text="Date")
+        self.report_tree.heading("Status", text="Status")
+        self.report_tree.pack(fill="both", expand=True, side="left", padx=5, pady=5)
+
+        scrollbar = ttk.Scrollbar(report_frame, orient="vertical", command=self.report_tree.yview)
+        scrollbar.pack(side="right", fill="y", pady=5)
+        self.report_tree.configure(yscrollcommand=scrollbar.set)
+
+        self.load_report()
+
+    def load_report(self):
+        for row in self.report_tree.get_children():
+            self.report_tree.delete(row)
+
+        filter_roll = self.filter_entry.get().strip()
+
+        conn = sqlite3.connect("academy_attendance.db")
+        cursor = conn.cursor()
+
+        if filter_roll:
+            cursor.execute("""
+                SELECT students.name, students.roll_no, attendance.class_name, attendance.subject, attendance.date, attendance.status 
+                FROM attendance 
+                JOIN students ON students.roll_no = attendance.roll_no 
+                WHERE attendance.roll_no = ?
+            """, (filter_roll,))
+        else:
+            cursor.execute("""
+                SELECT students.name, students.roll_no, attendance.class_name, attendance.subject, attendance.date, attendance.status 
+                FROM attendance 
+                JOIN students ON students.roll_no = attendance.roll_no
+            """)
+
+        records = cursor.fetchall()
+        conn.close()
+
+        for record in records:
+            self.report_tree.insert("", tk.END, values=record)
+
+if __name__ == "__main__":
+    init_db()
+    root = tk.Tk()
+    app = AttendanceApp(root)
+    root.mainloop()
